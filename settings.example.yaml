@@ -1,0 +1,16 @@
+$schema: "./settings.schema.yaml"
+# ---------- Application settings ----- #
+bot_token: null # Telegram bot token from @BotFather
+bot_name: "Fika Бот"
+bot_commands:
+  - command: "start"
+    description: "Начать работу"
+redis_url: null # Redis URL, "redis://redis:6379/0" inside the docker network
+fika_channel_link: null
+fika_channel_id: null
+toweco_username: null
+toweco_password: null
+admins: []
+openai_api_key: null
+daily_report_time: 18:00:00
+secret_for_waiter: null

@@ -1,0 +1,137 @@
+$schema: http://json-schema.org/draft-07/schema#
+$defs:
+  BotCommand:
+    additionalProperties: true
+    description: 'This object represents a bot command.
+
+
+      Source: https://core.telegram.org/bots/api#botcommand'
+    properties:
+      command:
+        title: Command
+        type: string
+      description:
+        title: Description
+        type: string
+    required:
+    - command
+    - description
+    title: BotCommand
+    type: object
+  Environment:
+    enum:
+    - development
+    - production
+    title: Environment
+    type: string
+additionalProperties: false
+description: Settings for the application.
+properties:
+  $schema:
+    default: null
+    title: $Schema
+    type: string
+  environment:
+    $ref: '#/$defs/Environment'
+    default: development
+    description: App environment flag
+  redis_url:
+    anyOf:
+    - format: password
+      type: string
+      writeOnly: true
+    - type: 'null'
+    default: null
+    description: Redis URL
+    examples:
+    - redis://localhost:6379/0
+    - redis://redis:6379/0
+    title: Redis Url
+  bot_token:
+    description: Telegram bot token from @BotFather
+    format: password
+    title: Bot Token
+    type: string
+    writeOnly: true
+  bot_name:
+    default: null
+    description: Desired bot name
+    title: Bot Name
+    type: string
+  bot_description:
+    default: null
+    description: Bot description
+    title: Bot Description
+    type: string
+  bot_short_description:
+    default: null
+    description: Bot short description
+    title: Bot Short Description
+    type: string
+  bot_commands:
+    default: null
+    description: Bot commands (displayed in telegram menu)
+    items:
+      $ref: '#/$defs/BotCommand'
+    title: Bot Commands
+    type: array
+  fika_channel_link:
+    description: Fika channel link
+    title: Fika Channel Link
+    type: string
+  fika_channel_id:
+    description: Fika channel ID (for sending reports)
+    title: Fika Channel Id
+    type: integer
+  admins:
+    default: []
+    description: Admin' telegram IDs
+    items:
+      type: integer
+    title: Admins
+    type: array
+  toweco_username:
+    description: Toweco username
+    title: Toweco Username
+    type: string
+  toweco_password:
+    description: Toweco password
+    format: password
+    title: Toweco Password
+    type: string
+    writeOnly: true
+  openai_api_key:
+    description: OpenAI API key
+    format: password
+    title: Openai Api Key
+    type: string
+    writeOnly: true
+  openai_chat_model:
+    default: gpt-4o
+    description: OpenAI chat model
+    title: Openai Chat Model
+    type: string
+  daily_report_time:
+    anyOf:
+    - format: time
+      type: string
+    - type: 'null'
+    default: null
+    description: Time for daily report (UTC)
+    title: Daily Report Time
+  secret_for_waiter:
+    description: Secret key for waiter on /start command
+    format: password
+    title: Secret For Waiter
+    type: string
+    writeOnly: true
+required:
+- bot_token
+- fika_channel_link
+- fika_channel_id
+- toweco_username
+- toweco_password
+- openai_api_key
+- secret_for_waiter
+title: Settings
+type: object

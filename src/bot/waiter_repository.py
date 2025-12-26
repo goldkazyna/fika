@@ -1,7 +1,6 @@
 import datetime
 import json
 
-
 from src.bot.db import conn, cur
 from src.bot.logging_ import logger
 
@@ -11,8 +10,10 @@ class WaiterRepository:
         cur.execute("SELECT * FROM waiters WHERE telegram_id = ?", (telegram_id,))
         if not (row := cur.fetchone()):
             return None
-        # check if waiter is deleted
-        if row[2]:
+        # check if waiter is deleted (index 3 now, after adding role)
+        if len(row) > 3 and row[3]:
+            return None
+        if len(row) == 3 and row[2]:
             return None
         return row
 
@@ -20,21 +21,28 @@ class WaiterRepository:
         cur.execute("SELECT * FROM waiters WHERE deleted = false")
         return cur.fetchall()
 
-    def add_waiter(self, telegram_id: int, telegram_object: str) -> None:
+    def add_waiter(self, telegram_id: int, telegram_object: str, role: str = None) -> None:
         # Check if waiter exists
         cur.execute("SELECT * FROM waiters WHERE telegram_id = ?", (telegram_id,))
         if cur.fetchone():
             # Update the existing waiter and set deleted to false
             cur.execute(
-                "UPDATE waiters SET object = ?, deleted = false WHERE telegram_id = ?",
-                (telegram_object, telegram_id),
+                "UPDATE waiters SET object = ?, role = ?, deleted = false WHERE telegram_id = ?",
+                (telegram_object, role, telegram_id),
             )
         else:
             # Insert a new waiter
             cur.execute(
-                "INSERT INTO waiters (telegram_id, object) VALUES (?, ?)",
-                (telegram_id, telegram_object),
+                "INSERT INTO waiters (telegram_id, object, role) VALUES (?, ?, ?)",
+                (telegram_id, telegram_object, role),
             )
+        conn.commit()
+
+    def update_role(self, telegram_id: int, role: str) -> None:
+        cur.execute(
+            "UPDATE waiters SET role = ? WHERE telegram_id = ?",
+            (role, telegram_id),
+        )
         conn.commit()
 
     def remove_waiter(self, telegram_id: int) -> None:
@@ -96,7 +104,7 @@ class WaiterRepository:
 
         return {
             "review": review_text,
-            "provider": "Отчёт от официанта",
+            "provider": "Отчёт от сотрудника",
             "author": author,
             "publishedAt": date,
         }

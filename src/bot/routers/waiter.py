@@ -1,15 +1,13 @@
 """
-5. Обратная связь от официантов
-• Функционал для персонала:
-   Официанты в конце смены отправляют в бот общую обратную связь от посетителей через текстовые сообщения.
-• Анализ обратной связи:
-   Бот обрабатывает данные и формирует отдельный отчет в Telegram с указанием, что информация поступила от официантов.
+5. Обратная связь от сотрудников
+- Функционал для персонала:
+   Сотрудники в конце смены отправляют в бот общую обратную связь от посетителей через текстовые сообщения.
+- Анализ обратной связи:
+   Бот обрабатывает данные и формирует отдельный отчет в Telegram с указанием роли сотрудника.
 """
 
 import json
-from functools import partial
 from io import BytesIO
-from typing import Literal
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import Message
@@ -32,23 +30,58 @@ class WaiterStates(StatesGroup):
 
 
 menu_ww = Window(
-    Const("<b>Меню официанта 🍽</b>"),
+    Const("<b>Меню сотрудника 🍽</b>"),
     SwitchTo(Const("Добавить обратную связь"), id="new_feedback", state=WaiterStates.add_feedback),
     state=WaiterStates.menu,
     parse_mode="HTML",
 )
 
 
+def get_user_role(telegram_id: int) -> str:
+    """Получает роль пользователя из базы в родительном падеже"""
+
+    # Склонения ролей (Именительный -> Родительный падеж)
+    ROLE_GENITIVE = {
+        "Управляющий": "Управляющего",
+        "Соучредитель": "Соучредителя",
+        "Учредитель": "Учредителя",
+        "Шеф-концепт": "Шеф-концепта",
+        "Шеф-бара": "Шеф-бара",
+        "Шеф-пекарь-кондитер": "Шеф-пекаря-кондитера",
+        "Официант": "Официанта",
+        "Кассир": "Кассира",
+        "Хостесс": "Хостесс",
+        "Су-шеф": "Су-шефа",
+        "Менеджер": "Менеджера",
+        "Закупщик": "Закупщика",
+        "Администратор": "Администратора",
+        "Сотрудник": "Сотрудника",
+    }
+
+    waiter = waiter_repository.get_waiter(telegram_id)
+    if waiter:
+        role = waiter[3] if len(waiter) > 3 else None
+        if role:
+            return ROLE_GENITIVE.get(role, role)
+
+    # Проверяем, админ ли это
+    if telegram_id in settings.admins:
+        return "Администратора"
+
+    return "Сотрудника"
+
+
 async def add_feedback_handler(
     message: Message,
     widget: MessageInput,
     manager: DialogManager,
-    /,
-    mode: Literal["admin", "waiter"],
 ):
     from src.bot.routers.admin import AdminStates
 
-    logger.info(f"Feedback from {mode}: {message.text or message.caption or message.voice}")
+    # Получаем роль пользователя
+    user_role = get_user_role(message.from_user.id)
+
+    logger.info(f"Feedback from {user_role}: {message.text or message.caption or message.voice}")
 
     as_dict = message.model_dump(exclude_none=True)
 
@@ -65,17 +98,21 @@ async def add_feedback_handler(
             logger.info(f"Transcripted: {transcription}")
         except Exception as e:
             logger.error(f"Error while transcription voice message {e}")
+
     waiter_repository.add_report(waiter_id=message.from_user.id, message=json.dumps(as_dict))
+
+    # Отправляем в канал с указанием роли
     await bot.send_message(
         chat_id=settings.fika_channel_id,
-        text="<b>Обратная связь от официанта:</b>" if mode == "waiter" else "<b>Обратная связь от администратора:</b>",
+        text=f"━━━━━━━━━━━━━━━━━━━━━━━━\n<b>📝 Обратная связь от {user_role}:</b>",
         disable_notification=True,
         parse_mode="HTML",
     )
     forwarded = await message.forward(chat_id=settings.fika_channel_id)
+
     if transcription:
         await forwarded.reply(
-            text=f"<b>Транскрипция:</b>\n<blockquote>{transcription}</blockquote>",
+            text=f"<b>🎤 Транскрипция:</b>\n<blockquote>{transcription}</blockquote>\n━━━━━━━━━━━━━━━━━━━━━━━━",
             disable_notification=True,
             parse_mode="HTML",
         )
@@ -84,13 +121,25 @@ async def add_feedback_handler(
             parse_mode="HTML",
         )
     else:
+        # Добавляем разделитель после сообщения без голоса
+        await bot.send_message(
+            chat_id=settings.fika_channel_id,
+            text="━━━━━━━━━━━━━━━━━━━━━━━━",
+            disable_notification=True,
+        )
         await message.reply("Спасибо за обратную связь!")
-    await manager.switch_to(WaiterStates.menu if mode == "waiter" else AdminStates.menu)
+
+    # Возвращаемся в меню
+    # Проверяем откуда пришли - из админки или из меню сотрудника
+    if message.from_user.id in settings.admins:
+        await manager.switch_to(AdminStates.menu)
+    else:
+        await manager.switch_to(WaiterStates.menu)
 
 
 feedback_ww = Window(
     Const("Введите общую обратную связь от посетителей"),
-    MessageInput(partial(add_feedback_handler, mode="waiter")),
+    MessageInput(add_feedback_handler),
     state=WaiterStates.add_feedback,
 )
 

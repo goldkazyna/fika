@@ -10,10 +10,9 @@ class WaiterRepository:
         cur.execute("SELECT * FROM waiters WHERE telegram_id = ?", (telegram_id,))
         if not (row := cur.fetchone()):
             return None
-        # check if waiter is deleted (index 3 now, after adding role)
-        if len(row) > 3 and row[3]:
-            return None
-        if len(row) == 3 and row[2]:
+        # deleted теперь в индексе 2
+        deleted = row[2]
+        if deleted:
             return None
         return row
 

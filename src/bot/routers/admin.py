@@ -1,5 +1,4 @@
 import json
-from functools import partial
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -352,7 +351,7 @@ edit_staff_role_ww = Window(
 
 feedback_ww = Window(
     Const("Введите общую обратную связь от посетителей"),
-    MessageInput(partial(add_feedback_handler, mode="admin")),
+    MessageInput(add_feedback_handler),
     state=AdminStates.add_feedback,
 )
 

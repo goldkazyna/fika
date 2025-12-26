@@ -12,16 +12,21 @@ async def get_statuses(telegram_id: int) -> list[str]:
     if telegram_id in settings.admins:
         statuses.append("admin")
 
-    if waiter_repository.get_waiter(telegram_id):
+    waiter = waiter_repository.get_waiter(telegram_id)
+    if waiter:
         statuses.append("waiter")
+        # Добавляем роль если есть
+        role = waiter[3] if len(waiter) > 3 else None
+        if role:
+            statuses.append("staff")
 
     return statuses
 
 
 class StatusFilter(Filter):
-    _status: Literal["admin", "waiter"] | None
+    _status: Literal["admin", "waiter", "staff"] | None
 
-    def __init__(self, status: Literal["admin", "waiter"] | None = None):
+    def __init__(self, status: Literal["admin", "waiter", "staff"] | None = None):
         self._status = status
 
     async def __call__(self, event: TelegramObject, event_from_user: User) -> bool | dict[str, Any]:

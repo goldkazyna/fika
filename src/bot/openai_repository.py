@@ -1,6 +1,7 @@
 import datetime
 from io import BytesIO
 
+import httpx
 from openai import AsyncOpenAI
 
 from src.bot.toweco_repository import toweco_repository
@@ -35,10 +36,15 @@ USER_MESSAGE_SUMMARY_TEMPLATE = """
 Больше внимания уделите проблемам, которые встречаются чаще всего.
 """
 
+# Прокси для обхода блокировки OpenAI
+PROXY_URL = "http://6dPrK3hR:VP2zxuMP@154.196.75.167:64380"
+
 
 class OpenAIRepository:
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
+        # Создаём HTTP клиент с прокси
+        http_client = httpx.AsyncClient(proxy=PROXY_URL)
+        self.client = AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value(), http_client=http_client)
 
     async def get_advice(self, reviews, waiter_reports) -> str | None:
         today = datetime.date.today()

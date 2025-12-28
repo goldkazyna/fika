@@ -10,13 +10,14 @@ from io import BytesIO
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import matplotlib.font_manager as fm
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from PIL import Image, ImageDraw
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
 from reportlab.lib.enums import TA_CENTER
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -52,25 +53,103 @@ def register_fonts():
 FONT_NAME, FONT_BOLD = register_fonts()
 
 
-def get_emoji_font():
-    """Находит шрифт с поддержкой emoji"""
-    emoji_fonts = [
-        "C:/Windows/Fonts/seguiemj.ttf",  # Windows Segoe UI Emoji
-        "C:/Windows/Fonts/segoe ui emoji.ttf",
-        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",  # Linux
-        "/System/Library/Fonts/Apple Color Emoji.ttc",  # macOS
-    ]
+def create_emoji_image(emoji_type: int, size: int = 64) -> Image.Image:
+    """
+    Создаёт PNG изображение смайлика с помощью PIL
+    emoji_type: 0=очень грустный, 1=грустный, 2=нейтральный, 3=улыбка, 4=счастливый
+    """
+    img = Image.new("RGBA", (size, size), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
 
-    for font_path in emoji_fonts:
-        if os.path.exists(font_path):
-            return fm.FontProperties(fname=font_path)
+    center = size // 2
+    radius = size // 2 - 4
 
-    return None
+    # Белый круг с серой обводкой
+    draw.ellipse(
+        [center - radius, center - radius, center + radius, center + radius],
+        fill=(255, 255, 255, 255),
+        outline=(100, 100, 100, 255),
+        width=3,
+    )
+
+    # Глаза
+    eye_y = center - radius // 4
+    eye_left_x = center - radius // 3
+    eye_right_x = center + radius // 3
+    eye_radius = radius // 8
+
+    draw.ellipse(
+        [eye_left_x - eye_radius, eye_y - eye_radius, eye_left_x + eye_radius, eye_y + eye_radius],
+        fill=(80, 80, 80, 255),
+    )
+    draw.ellipse(
+        [eye_right_x - eye_radius, eye_y - eye_radius, eye_right_x + eye_radius, eye_y + eye_radius],
+        fill=(80, 80, 80, 255),
+    )
+
+    # Рот
+    mouth_y = center + radius // 4
+    mouth_width = radius // 2
+    line_width = 3
+
+    if emoji_type == 0:  # Очень грустный
+        brow_y = eye_y - radius // 4
+        draw.line(
+            [eye_left_x - eye_radius * 2, brow_y + 5, eye_left_x + eye_radius * 2, brow_y - 3],
+            fill=(80, 80, 80, 255),
+            width=line_width,
+        )
+        draw.line(
+            [eye_right_x - eye_radius * 2, brow_y - 3, eye_right_x + eye_radius * 2, brow_y + 5],
+            fill=(80, 80, 80, 255),
+            width=line_width,
+        )
+        draw.arc(
+            [center - mouth_width, mouth_y, center + mouth_width, mouth_y + mouth_width],
+            start=200,
+            end=340,
+            fill=(80, 80, 80, 255),
+            width=line_width,
+        )
+
+    elif emoji_type == 1:  # Грустный
+        draw.arc(
+            [center - mouth_width, mouth_y - 5, center + mouth_width, mouth_y + mouth_width - 5],
+            start=200,
+            end=340,
+            fill=(80, 80, 80, 255),
+            width=line_width,
+        )
+
+    elif emoji_type == 2:  # Нейтральный
+        draw.line(
+            [center - mouth_width, mouth_y, center + mouth_width, mouth_y], fill=(80, 80, 80, 255), width=line_width
+        )
+
+    elif emoji_type == 3:  # Улыбка
+        draw.arc(
+            [center - mouth_width, mouth_y - mouth_width + 5, center + mouth_width, mouth_y + 5],
+            start=20,
+            end=160,
+            fill=(80, 80, 80, 255),
+            width=line_width,
+        )
+
+    elif emoji_type == 4:  # Счастливый
+        draw.arc(
+            [center - mouth_width - 5, mouth_y - mouth_width, center + mouth_width + 5, mouth_y + 5],
+            start=10,
+            end=170,
+            fill=(80, 80, 80, 255),
+            width=line_width + 1,
+        )
+
+    return img
 
 
 def create_mood_meter(rating: float) -> bytes:
     """
-    Создаёт изображение Mood Meter с помощью matplotlib
+    Создаёт изображение Mood Meter
     """
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.set_xlim(-1.5, 1.5)
@@ -78,10 +157,9 @@ def create_mood_meter(rating: float) -> bytes:
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # Цвета секторов
     colors = ["#D32F2F", "#F57C00", "#FDD835", "#9CCC65", "#388E3C"]
 
-    # Рисуем секторы
+    # Секторы
     for i in range(5):
         start_angle = 180 - (i * 36)
         end_angle = 180 - ((i + 1) * 36)
@@ -95,35 +173,23 @@ def create_mood_meter(rating: float) -> bytes:
     inner_circle = patches.Circle((0, 0), 0.5, facecolor="white", edgecolor="white", zorder=2)
     ax.add_patch(inner_circle)
 
-    # Emoji и их позиции (в центре каждого сектора)
-    emojis = ["😞", "🙁", "😐", "🙂", "😊"]
-    emoji_angles = [162, 126, 90, 54, 18]  # центры секторов
+    # Смайлики
+    emoji_angles = [162, 126, 90, 54, 18]
 
-    emoji_font = get_emoji_font()
-
-    for emoji, angle in zip(emojis, emoji_angles):
+    for i, angle in enumerate(emoji_angles):
         angle_rad = math.radians(angle)
         x = 0.75 * math.cos(angle_rad)
         y = 0.75 * math.sin(angle_rad)
 
-        # Белый круг-фон для emoji
-        bg_circle = patches.Circle((x, y), 0.13, facecolor="white", edgecolor="#666666", linewidth=1.5, zorder=10)
-        ax.add_patch(bg_circle)
+        emoji_img = create_emoji_image(i, size=64)
+        imagebox = OffsetImage(emoji_img, zoom=0.35)
+        ab = AnnotationBbox(imagebox, (x, y), frameon=False, zorder=10)
+        ax.add_artist(ab)
 
-        # Emoji текст
-        if emoji_font:
-            ax.text(x, y, emoji, fontsize=16, ha="center", va="center", fontproperties=emoji_font, zorder=11)
-        else:
-            ax.text(x, y, emoji, fontsize=16, ha="center", va="center", zorder=11)
-
-    # Угол стрелки
-    # rating 1.0 -> 180° (крайняя левая точка)
-    # rating 5.0 -> 0° (крайняя правая точка)
-    # Линейная интерполяция: angle = 180 - (rating - 1) * 45
+    # Стрелка
     angle_deg = 180 - (rating - 1) * 45
     angle_rad = math.radians(angle_deg)
 
-    # Стрелка
     arrow_length = 0.95
     arrow_x = arrow_length * math.cos(angle_rad)
     arrow_y = arrow_length * math.sin(angle_rad)
@@ -144,14 +210,11 @@ def create_mood_meter(rating: float) -> bytes:
     )
     ax.add_patch(triangle)
 
-    # Круг в центре
     center_circle = patches.Circle((0, 0), 0.08, facecolor="#1a1a1a", zorder=21)
     ax.add_patch(center_circle)
 
-    # Заголовок
     ax.text(0, 1.15, "FIKA MOOD METER", fontsize=14, fontweight="bold", ha="center", va="center", color="#333333")
 
-    # Значение рейтинга
     ax.text(0, -0.15, f"{rating:.1f}", fontsize=18, fontweight="bold", ha="center", va="center", color="#333333")
 
     buffer = BytesIO()
@@ -217,23 +280,20 @@ def generate_summary_pdf(reviews: list, waiter_reports: list, ai_summary: str = 
     today = datetime.date.today()
     date_from = today - datetime.timedelta(days=13)
 
-    # ЗАГОЛОВОК
     story.append(Paragraph("Сводка за 2 недели", styles["TitleRu"]))
     story.append(Paragraph(f"{date_from.strftime('%d.%m.%Y')} - {today.strftime('%d.%m.%Y')}", styles["SubtitleRu"]))
 
-    # MOOD METER
     if reviews:
         mean_rating = statistics.mean([r.get("rating", 0) for r in reviews])
 
         try:
             mood_img_bytes = create_mood_meter(mean_rating)
-            mood_img = Image(BytesIO(mood_img_bytes), width=130 * mm, height=85 * mm)
+            mood_img = RLImage(BytesIO(mood_img_bytes), width=130 * mm, height=85 * mm)
             story.append(mood_img)
             story.append(Spacer(1, 10))
         except Exception as e:
             story.append(Paragraph(f"Ошибка Mood Meter: {e}", styles["NormalRu"]))
 
-    # СТАТИСТИКА
     story.append(Paragraph("Общая статистика", styles["HeadingRu"]))
 
     if reviews:
@@ -275,7 +335,6 @@ def generate_summary_pdf(reviews: list, waiter_reports: list, ai_summary: str = 
 
     story.append(Spacer(1, 30))
 
-    # AI СВОДКА
     if ai_summary:
         story.append(Paragraph("AI-сводка и рекомендации", styles["HeadingRu"]))
         for para in ai_summary.split("\n"):

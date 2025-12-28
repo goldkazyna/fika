@@ -195,19 +195,49 @@ async def send_report(
 
 
 async def send_summary(chat_id: int) -> None | str:
+    """Отправляет сводку в виде PDF файла"""
     from src.bot.app import bot
+    from src.bot.pdf_report import generate_summary_pdf
 
     today = get_today()
     date_from = today - datetime.timedelta(days=13)
 
-    error_message, reviews = await fetch_reviews(date_from)
-    if error_message:
-        return error_message
-    waiter_reports = await fetch_reports(date_from)
+    # Отправляем сообщение о начале генерации
+    status_msg = await bot.send_message(chat_id, "⏳ Генерирую PDF отчёт, подождите...")
 
-    ai_summary = await openai_repository.summary(reviews, waiter_reports)
-    if ai_summary:
-        ai_summary_text = f"<b>Сводка с {date_from} по {today}:</b>\n{telegram_format(ai_summary)}"
-        await bot.send_message(chat_id, ai_summary_text, parse_mode="HTML")
-    else:
-        return "Ошибка при получении сводки"
+    try:
+        # Получаем данные
+        error_message, reviews = await fetch_reviews(date_from)
+        if error_message:
+            await status_msg.edit_text(f"❌ {error_message}")
+            return error_message
+
+        waiter_reports = await fetch_reports(date_from)
+
+        # Получаем AI сводку
+        await status_msg.edit_text("🤖 Генерирую AI-сводку...")
+        ai_summary = await openai_repository.summary(reviews, waiter_reports)
+
+        # Генерируем PDF
+        await status_msg.edit_text("📄 Создаю PDF...")
+        pdf_bytes = generate_summary_pdf(reviews, waiter_reports, ai_summary)
+
+        # Отправляем файл
+        filename = f"Сводка_{date_from.strftime('%d.%m')}-{today.strftime('%d.%m.%Y')}.pdf"
+        await bot.send_document(
+            chat_id,
+            document=BufferedInputFile(pdf_bytes, filename=filename),
+            caption=f"📊 Сводка за период {date_from.strftime('%d.%m.%Y')} — {today.strftime('%d.%m.%Y')}\n\n"
+            f"📝 Отзывов: {len(reviews)}\n"
+            f"👥 Отчётов от сотрудников: {len(waiter_reports)}",
+        )
+
+        # Удаляем статусное сообщение
+        await status_msg.delete()
+
+    except Exception as e:
+        logger.error(f"Error generating PDF: {e}")
+        await status_msg.edit_text(f"❌ Ошибка при генерации отчёта: {str(e)}")
+        return f"Ошибка: {str(e)}"
+
+    return None

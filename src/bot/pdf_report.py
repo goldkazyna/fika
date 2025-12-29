@@ -290,6 +290,11 @@ def generate_summary_pdf(reviews: list, waiter_reports: list, ai_summary: str = 
             mood_img_bytes = create_mood_meter(mean_rating)
             mood_img = RLImage(BytesIO(mood_img_bytes), width=130 * mm, height=85 * mm)
             story.append(mood_img)
+            story.append(Spacer(1, 5))
+
+            # Цель и текущая оценка
+            goal_text = f"Цель - 5.0  |  Текущая оценка - {mean_rating:.1f}"
+            story.append(Paragraph(goal_text, styles["SubtitleRu"]))
             story.append(Spacer(1, 10))
         except Exception as e:
             story.append(Paragraph(f"Ошибка Mood Meter: {e}", styles["NormalRu"]))
@@ -336,7 +341,7 @@ def generate_summary_pdf(reviews: list, waiter_reports: list, ai_summary: str = 
     story.append(Spacer(1, 30))
 
     if ai_summary:
-        story.append(Paragraph("AI-сводка и рекомендации", styles["HeadingRu"]))
+        story.append(Paragraph("AI-анализ проблем", styles["HeadingRu"]))
         for para in ai_summary.split("\n"):
             if para.strip():
                 para = para.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

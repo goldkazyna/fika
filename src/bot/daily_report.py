@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 import datetime
 import statistics
 
@@ -17,6 +18,17 @@ from dateutil import tz
 
 def get_today():
     return datetime.datetime.now(tz=tz.gettz("Asia/Almaty")).date()
+
+
+def is_summary_day(date: datetime.date) -> bool:
+    """Проверяет, является ли день днём для генерации сводки (15-е или последний день месяца)"""
+    if date.day == 15:
+        return True
+    # Последний день месяца
+    last_day = calendar.monthrange(date.year, date.month)[1]
+    if date.day == last_day:
+        return True
+    return False
 
 
 async def daily_report_loop():
@@ -76,6 +88,90 @@ async def daily_report_loop():
                     logger.warning("Couldn't send the report to %s. Please check: %s", chat_id, e)
                     await asyncio.sleep(100)
             await asyncio.sleep(1)
+
+
+async def summary_report_loop():
+    """Цикл для автоматической отправки PDF сводки 15-го и в последний день месяца в 10:00"""
+    await asyncio.sleep(15)  # wait for the bot to start
+
+    summary_hour = 10
+    summary_minute = 0
+
+    while True:
+        # Текущее время в Алматы
+        now_almaty = datetime.datetime.now(tz=tz.gettz("Asia/Almaty"))
+        today = now_almaty.date()
+
+        # Определяем следующую дату для отправки
+        next_summary_date = None
+
+        # Проверяем сегодня
+        if is_summary_day(today):
+            target_time = now_almaty.replace(hour=summary_hour, minute=summary_minute, second=0, microsecond=0)
+            if now_almaty < target_time:
+                next_summary_date = today
+            else:
+                # Уже прошло время, ищем следующую дату
+                next_summary_date = None
+
+        # Если сегодня не подходит, ищем следующую дату
+        if next_summary_date is None:
+            check_date = today + datetime.timedelta(days=1)
+            for _ in range(31):  # максимум месяц вперёд
+                if is_summary_day(check_date):
+                    next_summary_date = check_date
+                    break
+                check_date += datetime.timedelta(days=1)
+
+        if next_summary_date is None:
+            logger.error("Could not find next summary date")
+            await asyncio.sleep(3600)
+            continue
+
+        # Вычисляем время до отправки
+        target_datetime = datetime.datetime(
+            next_summary_date.year,
+            next_summary_date.month,
+            next_summary_date.day,
+            hour=summary_hour,
+            minute=summary_minute,
+            tzinfo=tz.gettz("Asia/Almaty"),
+        )
+
+        wait_seconds = (target_datetime - now_almaty).total_seconds()
+
+        if wait_seconds > 0:
+            logger.info(
+                f"Next PDF summary scheduled for {target_datetime.strftime('%d.%m.%Y %H:%M')} "
+                f"(in {round(wait_seconds / 3600, 1)} hours)"
+            )
+            await asyncio.sleep(wait_seconds)
+
+        # Отправляем сводку
+        logger.info("Sending scheduled PDF summary")
+        await send_summary_to_all()
+
+
+async def send_summary_to_all():
+    """Отправляет PDF сводку в канал и всем админам"""
+    recipients = [settings.fika_channel_id] + settings.admins
+
+    for chat_id in recipients:
+        for attempt in range(3):
+            try:
+                error_message = await send_summary(chat_id)
+                if error_message:
+                    logger.warning(f"Couldn't send PDF summary to {chat_id}: {error_message}")
+                else:
+                    logger.info(f"Successfully sent PDF summary to {chat_id}")
+                break
+            except TelegramBadRequest as e:
+                logger.warning(f"Couldn't send PDF summary to {chat_id}: {e}")
+                break
+            except Exception as e:
+                logger.warning(f"Couldn't send PDF summary to {chat_id} (attempt {attempt + 1}): {e}")
+                await asyncio.sleep(30)
+        await asyncio.sleep(2)
 
 
 async def fetch_reviews(date_from: datetime.date) -> tuple[str | None, list]:
@@ -202,25 +298,33 @@ async def send_summary(chat_id: int) -> None | str:
     today = get_today()
     date_from = today - datetime.timedelta(days=13)
 
-    # Отправляем сообщение о начале генерации
-    status_msg = await bot.send_message(chat_id, "⏳ Генерирую PDF отчёт, подождите...")
+    # Отправляем сообщение о начале генерации (только для личных чатов, не каналов)
+    status_msg = None
+    if chat_id > 0:  # Личный чат
+        status_msg = await bot.send_message(chat_id, "⏳ Генерирую PDF отчёт, подождите...")
 
     try:
         # Получаем данные
         error_message, reviews = await fetch_reviews(date_from)
         if error_message:
-            await status_msg.edit_text(f"❌ {error_message}")
+            if status_msg:
+                await status_msg.edit_text(f"❌ {error_message}")
             return error_message
 
         waiter_reports = await fetch_reports(date_from)
 
         # Получаем AI сводку
-        await status_msg.edit_text("🤖 Генерирую AI-сводку...")
+        if status_msg:
+            await status_msg.edit_text("🤖 Генерирую AI-анализ...")
         ai_summary = await openai_repository.summary(reviews, waiter_reports)
 
         # Генерируем PDF
-        await status_msg.edit_text("📄 Создаю PDF...")
+        if status_msg:
+            await status_msg.edit_text("📄 Создаю PDF...")
         pdf_bytes = generate_summary_pdf(reviews, waiter_reports, ai_summary)
+
+        # Считаем статистику
+        mean_rating = statistics.mean([r.get("rating", 0) for r in reviews]) if reviews else 0
 
         # Отправляем файл
         filename = f"Сводка_{date_from.strftime('%d.%m')}-{today.strftime('%d.%m.%Y')}.pdf"
@@ -229,15 +333,18 @@ async def send_summary(chat_id: int) -> None | str:
             document=BufferedInputFile(pdf_bytes, filename=filename),
             caption=f"📊 Сводка за период {date_from.strftime('%d.%m.%Y')} — {today.strftime('%d.%m.%Y')}\n\n"
             f"📝 Отзывов: {len(reviews)}\n"
+            f"⭐️ Средняя оценка: {mean_rating:.1f}\n"
             f"👥 Отчётов от сотрудников: {len(waiter_reports)}",
         )
 
         # Удаляем статусное сообщение
-        await status_msg.delete()
+        if status_msg:
+            await status_msg.delete()
 
     except Exception as e:
         logger.error(f"Error generating PDF: {e}")
-        await status_msg.edit_text(f"❌ Ошибка при генерации отчёта: {str(e)}")
+        if status_msg:
+            await status_msg.edit_text(f"❌ Ошибка при генерации отчёта: {str(e)}")
         return f"Ошибка: {str(e)}"
 
     return None

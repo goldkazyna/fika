@@ -13,7 +13,7 @@ from aiogram.types import ErrorEvent
 from aiogram_dialog import DialogManager, StartMode, setup_dialogs
 from aiogram_dialog.api.exceptions import UnknownIntent, UnknownState
 
-from src.bot.daily_report import daily_report_loop
+from src.bot.daily_report import daily_report_loop, summary_report_loop
 from src.bot.dispatcher import CustomDispatcher
 from src.bot.filters import get_statuses
 from src.bot.logging_ import logger
@@ -130,6 +130,7 @@ async def main():
     # Drop pending updates
     await bot.delete_webhook(drop_pending_updates=True)
     asyncio.create_task(daily_report_loop())
+    asyncio.create_task(summary_report_loop())  # PDF сводка 15-го и в последний день месяца
     # Start long-polling
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

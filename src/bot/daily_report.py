@@ -178,12 +178,18 @@ async def fetch_reviews(date_from: datetime.date) -> tuple[str | None, list]:
     try:
         reviews = await toweco_repository.get_reviews(date_from=date_from)
         reviews.sort(key=lambda x: datetime.datetime.fromisoformat(x["publishedAt"]))
-    except RuntimeError as e:
-        if e.args:
+    except Exception as e:
+        if isinstance(e, RuntimeError) and e.args:
             first = e.args[0]
-            if "error" in first and "code" in first["error"] and first["error"]["code"] == 429:
+            if (
+                isinstance(first, dict)
+                and "error" in first
+                and "code" in first.get("error", {})
+                and first["error"]["code"] == 429
+            ):
                 return "Слишком много запросов к API, попробуйте через минуту", []
 
+        logger.error(f"Failed to fetch reviews: {e}", exc_info=True)
         return "Ошибка при получении отзывов", []
     if not reviews:
         return f"Отзывов с {date_from} нет", []

@@ -61,6 +61,8 @@ class TowecoRepository:
                 await self.auth()
                 response = await self.client.post(url, json=payload)
                 response.raise_for_status()
+            else:
+                raise
 
         as_python = response.json()[0]
         if "error" in as_python:

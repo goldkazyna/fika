@@ -104,7 +104,7 @@ async def add_feedback_handler(
     # Отправляем в канал с указанием роли
     await bot.send_message(
         chat_id=settings.fika_channel_id,
-        text=f"━━━━━━━━━━━━━━━━━━━━━━━━\n<b>📝 Обратная связь от {user_role}:</b>",
+        text=f"<b>📝 Обратная связь от {user_role}:</b>",
         disable_notification=True,
         parse_mode="HTML",
     )
@@ -112,7 +112,7 @@ async def add_feedback_handler(
 
     if transcription:
         await forwarded.reply(
-            text=f"<b>🎤 Транскрипция:</b>\n<blockquote>{transcription}</blockquote>\n━━━━━━━━━━━━━━━━━━━━━━━━",
+            text=f"<b>🎤 Транскрипция:</b>\n<blockquote>{transcription}</blockquote>",
             disable_notification=True,
             parse_mode="HTML",
         )
@@ -122,11 +122,6 @@ async def add_feedback_handler(
         )
     else:
         # Добавляем разделитель после сообщения без голоса
-        await bot.send_message(
-            chat_id=settings.fika_channel_id,
-            text="━━━━━━━━━━━━━━━━━━━━━━━━",
-            disable_notification=True,
-        )
         await message.reply("Спасибо за обратную связь!")
 
     # Возвращаемся в меню
